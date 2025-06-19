@@ -1,7 +1,5 @@
 # 🧹 del-cf-deploy — Cloudflare Pages 自动部署清理工具
 
-[![Cleanup Workflow](https://github.com/${{ github.repository }}/actions/workflows/cleanup.yml/badge.svg)](https://github.com/${{ github.repository }}/actions/workflows/cleanup.yml)
-
 清理你的 Cloudflare Pages 项目旧部署，只保留最新 3 个版本，让项目整洁如新。  
 Keep your Cloudflare Pages tidy by automatically deleting older deployments and keeping only the latest 3.
 
