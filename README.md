@@ -28,6 +28,7 @@ Fork本仓库，然后前往仓库 → Settings → Secrets and variables → Ac
 | `CF_ACCOUNT_ID`  | 你的 Cloudflare 账户 ID               |
 
 ---
+[点击查看：如何获取这两个 secrets](https://wobshare.us.kg/del-cf-deploy)
 
 ### 2️⃣ 配置项目列表
 
