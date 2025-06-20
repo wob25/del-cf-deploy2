@@ -1,4 +1,4 @@
-# 🧹 del-cf-deploy — Cloudflare Pages 自动部署清理工具
+# 🧹 Cloudflare Pages 自动部署清理工具
 
 清理你的 Cloudflare Pages 项目旧部署，只保留最新 3 个版本，让项目整洁如新。  
 Keep your Cloudflare Pages tidy by automatically deleting older deployments and keeping only the latest 3.
@@ -8,7 +8,7 @@ Keep your Cloudflare Pages tidy by automatically deleting older deployments and 
 ## ✨ 特性 Highlights
 
 - 🔁 支持多个项目，统一清理
-- 🧹 每日自动执行，也支持手动触发
+- 🧹 每天凌晨 2 点运行自动执行，也支持手动触发
 - 🔐 跳过当前激活版本，防止误删
 - 🛠️ 全程托管，无需服务器
 
