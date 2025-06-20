@@ -5,47 +5,45 @@ const token = process.env.CF_API_TOKEN;
 const accountId = process.env.CF_ACCOUNT_ID;
 const headers = { Authorization: `Bearer ${token}` };
 const keepCount = 3; // 保留最新的部署数量
-const perPage = 25;  // 每次 API 请求获取的数量
+const perPage = 25;  // 每次 API 请求获取的数量 (仅对获取部署记录有效)
 
 // --- 工具函数 ---
 const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
 /**
- * 获取账户下所有的 Pages 项目名称（自动处理分页）
+ * 获取账户下所有的 Pages 项目名称
+ * (此 API 端点不使用分页，会一次性返回所有项目)
  * @returns {Promise<string[]|null>} 返回项目名称数组，如果出错则返回 null
  */
 const getAllProjectNames = async () => {
-  const allProjects = [];
-  let page = 1;
   console.log("🌐 开始获取账户下的所有 Pages 项目...");
+  // 注意：这个 URL 不包含分页参数
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects`;
+  
+  try {
+    const res = await fetch(url, { headers });
+    const data = await res.json();
 
-  while (true) {
-    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects?page=${page}&per_page=${perPage}`;
-    
-    try {
-      const res = await fetch(url, { headers });
-      const data = await res.json();
-
-      if (!data.success) {
-        console.warn(`❌ 获取项目列表第 ${page} 页时请求失败: ${data.errors?.[0]?.message || '未知错误'}`);
-        return null;
-      }
-      
-      const projectsOnPage = data.result;
-      if (!projectsOnPage || projectsOnPage.length === 0) {
-        console.log(`✅ 已成功获取所有项目。`);
-        break;
-      }
-
-      allProjects.push(...projectsOnPage);
-      page++;
-      await sleep(500);
-    } catch (error) {
-      console.error(`❌ 获取项目列表时发生网络错误: ${error.message}`);
+    if (!data.success) {
+      // 使用 GitHub Actions 的日志格式输出错误，更显眼
+      console.error(`::error::获取项目列表时请求失败: ${data.errors?.[0]?.message || '未知错误'}`);
       return null;
     }
+    
+    const projects = data.result;
+    if (!projects || projects.length === 0) {
+        console.log("✅ 未在账户下发现任何 Pages 项目。");
+        return [];
+    }
+
+    console.log(`✅ 已成功获取所有项目。`);
+    // 直接返回项目名称的数组
+    return projects.map(p => p.name);
+
+  } catch (error) {
+    console.error(`::error::获取项目列表时发生网络错误: ${error.message}`);
+    return null;
   }
-  return allProjects.map(p => p.name); // 我们只需要项目的名称
 };
 
 
@@ -68,20 +66,20 @@ const getAllDeployments = async (project) => {
       const data = await res.json();
 
       if (!data.success) {
-        console.warn(`❌ [${project}] 获取第 ${page} 页时请求失败: ${data.errors?.[0]?.message || '未知错误'}`);
+        console.warn(`::warning::[${project}] 获取第 ${page} 页时请求失败: ${data.errors?.[0]?.message || '未知错误'}`);
         return null;
       }
       
       const deploymentsOnPage = data.result;
       if (!deploymentsOnPage || deploymentsOnPage.length === 0) {
-        break;
+        break; // 没有更多部署记录，正常退出循环
       }
 
       allDeployments.push(...deploymentsOnPage);
       page++;
-      await sleep(500);
+      await sleep(500); // 礼貌地等待，避免触发 API 速率限制
     } catch (error) {
-      console.error(`❌ [${project}] 获取部署时发生网络错误: ${error.message}`);
+      console.error(`::error::[${project}] 获取部署时发生网络错误: ${error.message}`);
       return null;
     }
   }
@@ -110,8 +108,9 @@ const cleanupProject = async (project) => {
     return;
   }
 
+  // 筛选出需要删除的部署
   const toDelete = deployments.slice(keepCount).filter(d => 
-    d.latest_stage?.status.toLowerCase() !== 'active' && d.deployment_trigger.type !== 'production'
+    d.latest_stage?.status.toLowerCase() !== 'active' && d.deployment_trigger?.type !== 'production'
   );
 
   if (toDelete.length === 0) {
@@ -132,12 +131,12 @@ const cleanupProject = async (project) => {
         console.log(`✅ [${project}] 删除成功: ${d.id.substring(0, 8)}...`);
       } else {
         const del = await res.json();
-        console.warn(`⚠️ [${project}] 删除失败: ${d.id.substring(0, 8)}...，原因：${del.errors?.[0]?.message || res.statusText}`);
+        console.warn(`::warning::[${project}] 删除失败: ${d.id.substring(0, 8)}...，原因：${del.errors?.[0]?.message || res.statusText}`);
       }
     } catch (error) {
-      console.error(`❌ [${project}] 删除部署时发生网络错误: ${error.message}`);
+      console.error(`::error::[${project}] 删除部署时发生网络错误: ${error.message}`);
     }
-    await sleep(800);
+    await sleep(800); // 每次删除后等待
   }
 };
 
@@ -146,14 +145,19 @@ const cleanupProject = async (project) => {
  */
 const main = async () => {
   if (!token || !accountId) {
-    console.error("❌ 环境变量 CF_API_TOKEN 或 CF_ACCOUNT_ID 未设置，脚本无法运行。");
+    console.error("::error::环境变量 CF_API_TOKEN 或 CF_ACCOUNT_ID 未设置，脚本无法运行。");
     process.exit(1);
   }
 
   const projectNames = await getAllProjectNames();
 
-  if (projectNames === null || projectNames.length === 0) {
-    console.log("🤷 未能获取到任何项目，或没有项目需要清理。脚本结束。");
+  if (projectNames === null) {
+    console.log("🤷 脚本因获取项目列表失败而提前终止。");
+    process.exit(1); // 如果获取列表失败，则终止整个流程
+  }
+
+  if (projectNames.length === 0) {
+    console.log("🤷 未发现任何项目，或没有项目需要清理。脚本结束。");
     return;
   }
 
@@ -166,4 +170,5 @@ const main = async () => {
   console.log("\n🎉 所有项目的清理任务已执行完毕！");
 };
 
+// 运行主函数
 main();
