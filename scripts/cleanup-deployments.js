@@ -1,15 +1,53 @@
 import fetch from 'node-fetch';
-import fs from 'fs';
 
 // --- 配置项 ---
 const token = process.env.CF_API_TOKEN;
 const accountId = process.env.CF_ACCOUNT_ID;
 const headers = { Authorization: `Bearer ${token}` };
 const keepCount = 3; // 保留最新的部署数量
-const perPage = 25;  // 每次 API 请求获取的数量（Cloudflare Pages 部署接口最大为 25）
+const perPage = 25;  // 每次 API 请求获取的数量
 
 // --- 工具函数 ---
 const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+/**
+ * 获取账户下所有的 Pages 项目名称（自动处理分页）
+ * @returns {Promise<string[]|null>} 返回项目名称数组，如果出错则返回 null
+ */
+const getAllProjectNames = async () => {
+  const allProjects = [];
+  let page = 1;
+  console.log("🌐 开始获取账户下的所有 Pages 项目...");
+
+  while (true) {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects?page=${page}&per_page=${perPage}`;
+    
+    try {
+      const res = await fetch(url, { headers });
+      const data = await res.json();
+
+      if (!data.success) {
+        console.warn(`❌ 获取项目列表第 ${page} 页时请求失败: ${data.errors?.[0]?.message || '未知错误'}`);
+        return null;
+      }
+      
+      const projectsOnPage = data.result;
+      if (!projectsOnPage || projectsOnPage.length === 0) {
+        console.log(`✅ 已成功获取所有项目。`);
+        break;
+      }
+
+      allProjects.push(...projectsOnPage);
+      page++;
+      await sleep(500);
+    } catch (error) {
+      console.error(`❌ 获取项目列表时发生网络错误: ${error.message}`);
+      return null;
+    }
+  }
+  return allProjects.map(p => p.name); // 我们只需要项目的名称
+};
+
 
 /**
  * 获取单个项目的所有部署记录（自动处理分页）
@@ -31,23 +69,23 @@ const getAllDeployments = async (project) => {
 
       if (!data.success) {
         console.warn(`❌ [${project}] 获取第 ${page} 页时请求失败: ${data.errors?.[0]?.message || '未知错误'}`);
-        return null; // 中断并返回 null 表示失败
+        return null;
       }
       
       const deploymentsOnPage = data.result;
       if (!deploymentsOnPage || deploymentsOnPage.length === 0) {
-        console.log(`✅ [${project}] 已获取所有部署记录。`);
-        break; // 没有更多数据，退出循环
+        break;
       }
 
       allDeployments.push(...deploymentsOnPage);
       page++;
-      await sleep(500); // 礼貌地等待，避免触发 API 速率限制
+      await sleep(500);
     } catch (error) {
       console.error(`❌ [${project}] 获取部署时发生网络错误: ${error.message}`);
       return null;
     }
   }
+  console.log(`✅ [${project}] 已获取所有部署记录。`);
   return allDeployments;
 };
 
@@ -72,7 +110,6 @@ const cleanupProject = async (project) => {
     return;
   }
 
-  // API 返回的数据已按时间倒序，直接截取需要删除的部分
   const toDelete = deployments.slice(keepCount).filter(d => 
     d.latest_stage?.status.toLowerCase() !== 'active' && d.deployment_trigger.type !== 'production'
   );
@@ -91,7 +128,6 @@ const cleanupProject = async (project) => {
     
     try {
       const res = await fetch(url, { method: 'DELETE', headers });
-      // 删除成功的响应体是空的，但我们需要检查状态码
       if (res.ok) {
         console.log(`✅ [${project}] 删除成功: ${d.id.substring(0, 8)}...`);
       } else {
@@ -101,7 +137,7 @@ const cleanupProject = async (project) => {
     } catch (error) {
       console.error(`❌ [${project}] 删除部署时发生网络错误: ${error.message}`);
     }
-    await sleep(800); // 每次删除后等待
+    await sleep(800);
   }
 };
 
@@ -114,17 +150,20 @@ const main = async () => {
     process.exit(1);
   }
 
-  try {
-    const projects = JSON.parse(fs.readFileSync('./projects.json', 'utf-8'));
-    console.log(`🔍 发现 ${projects.length} 个项目需要清理。`);
-    for (const project of projects) {
-      await cleanupProject(project);
-    }
-    console.log("\n🎉 所有项目的清理任务已执行完毕！");
-  } catch (error) {
-    console.error(`❌ 读取 projects.json 文件失败: ${error.message}`);
-    process.exit(1);
+  const projectNames = await getAllProjectNames();
+
+  if (projectNames === null || projectNames.length === 0) {
+    console.log("🤷 未能获取到任何项目，或没有项目需要清理。脚本结束。");
+    return;
   }
+
+  console.log(`\n🔍 发现 ${projectNames.length} 个项目将要进行清理: ${projectNames.join(', ')}`);
+  
+  for (const project of projectNames) {
+    await cleanupProject(project);
+  }
+  
+  console.log("\n🎉 所有项目的清理任务已执行完毕！");
 };
 
 main();
