@@ -8,7 +8,7 @@ Keep your Cloudflare Pages tidy by automatically deleting older deployments and 
 ## ✨ 特性 Highlights
 
 - 🔁 支持多个项目，统一清理
-- 🧹 每天凌晨 2 点运行自动执行，也支持手动触发
+- 🧹 每天凌晨 2 点自动执行，也支持手动触发
 - 🔐 跳过当前激活版本，防止误删
 - 🛠️ 全程托管，无需服务器
 
